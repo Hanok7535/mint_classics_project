@@ -1,0 +1,132 @@
+-- USE mintclassics;
+-- show tables;
+-- DESC customers;
+-- DESC employees;
+-- DESC Offices;
+-- DESC orderDetails;
+-- DESC orders;
+-- DESC payments;
+-- DESC productlines;
+-- DESC products;
+-- DESC warehouses;
+-- SELECT * FROM Customers LIMIT 5;
+-- SELECT * FROM Employees LIMIT 5;
+-- SELECT * FROM Officers LIMIT 5;
+-- SELECT * FROM `Order Details` LIMIT 5;
+-- SELECT * FROM Orders LIMIT 5;
+-- SELECT * FROM Payments LIMIT 5;
+-- SELECT * FROM `Product Lines` LIMIT 5;
+-- SELECT * FROM Products LIMIT 5;
+-- SELECT * FROM Warehouses LIMIT 5;
+-- show index from customers;customers
+-- SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+-- FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+-- WHERE TABLE_SCHEMA = 'mintcalssics' AND REFERENCED_TABLE_NAME IS NOT NULL;
+
+-- total number of warehouses
+-- first, we check how many warehouses exist.
+-- SELECT COUNT(*) AS TOTAL_WAREHOUSES FROM WAREHOUSES;
+-- insight: we found that there are 4 warehouses in total.
+
+-- total_stock,total_sold, percentage of stock sold per warehouse
+-- to get a clearer insight, we calculate the percentage of stock sold per warehouse.
+-- SELECT P.WAREHOUSECODE,
+-- SUM(P.QUANTITYINSTOCK) AS TOTAL_STOCK, 
+-- SUM(OD.QUANTITYORDERED) AS TOTAL_SOLD, 
+-- ROUND((SUM(OD.QUANTITYORDERED)/SUM(P.QUANTITYINSTOCK))*100,2) AS PERCENT_SOLD 
+-- FROM ORDERDETAILS OD JOIN PRODUCTS P ON OD.PRODUCTCODE = P.PRODUCTCODE 
+-- GROUP BY P.WAREHOUSECODE 
+-- ORDER BY TOTAL_SOLD DESC;
+-- insight: warehouse d has sold only 1% of its stock, making it a strong candidate for closure. warehouse b is also underperforming.
+
+-- understanding stock distribution per warehouse
+-- first, we check which products are stored in which warehouses and their stock levels.
+-- SELECT PRODUCTCODE, PRODUCTNAME, WAREHOUSECODE, QUANTITYINSTOCK
+-- FROM PRODUCTS
+-- ORDER BY WAREHOUSECODE, QUANTITYINSTOCK DESC;
+-- insight:helps us see stock concentration in each warehouse.
+
+-- identifying slow-moving warehouses (high stock, low sales)
+-- to find warehouses that are holding too much stock but selling less, we check stock vs. sales per warehouse.
+-- SELECT 
+--     P.WAREHOUSECODE, 
+--     SUM(P.QUANTITYINSTOCK) AS TOTAL_STOCK, 
+--     SUM(OD.QUANTITYORDERED) AS TOTAL_SOLD, 
+--     ROUND((SUM(OD.QUANTITYORDERED) / SUM(P.QUANTITYINSTOCK)) * 100, 2) AS PERCENTAGE_SOLD
+-- FROM PRODUCTS P
+-- LEFT JOIN ORDERDETAILS OD ON P.PRODUCTCODE = OD.PRODUCTCODE
+-- GROUP BY P.WAREHOUSECODE
+-- ORDER BY PERCENTAGE_SOLD ASC;
+-- insight:warehouses with low percentage sold → inefficient and potential candidates for closure.
+
+-- finding slow-moving products per warehouse
+-- some warehouses might be holding products that don’t sell.
+-- SELECT 
+--     P.WAREHOUSECODE, 
+--     P.PRODUCTCODE, 
+--     P.PRODUCTNAME, 
+--     P.QUANTITYINSTOCK, 
+--     COALESCE(SUM(OD.QUANTITYORDERED), 0) AS TOTAL_SOLD
+-- FROM PRODUCTS P
+-- LEFT JOIN ORDERDETAILS OD ON P.PRODUCTCODE = OD.PRODUCTCODE
+-- GROUP BY P.WAREHOUSECODE, P.PRODUCTCODE, P.PRODUCTNAME
+-- ORDER BY TOTAL_SOLD ASC;
+-- insight:products with low sales but high stock → contributing to warehouse inefficiency.
+
+-- checking warehouses storing high-demand, low-supply products
+-- to ensure we aren’t closing a warehouse with valuable products, we check which warehouses hold high-demand but low-stock products.
+-- SELECT 
+--     P.WAREHOUSECODE, 
+--     P.PRODUCTCODE, 
+--     P.PRODUCTNAME, 
+--     SUM(OD.QUANTITYORDERED) AS TOTAL_DEMAND, 
+--     P.QUANTITYINSTOCK AS TOTAL_SUPPLY
+-- FROM PRODUCTS P
+-- LEFT JOIN ORDERDETAILS OD ON P.PRODUCTCODE = OD.PRODUCTCODE
+-- GROUP BY P.WAREHOUSECODE, P.PRODUCTCODE, P.PRODUCTNAME
+-- HAVING TOTAL_SUPPLY < TOTAL_DEMAND
+-- ORDER BY TOTAL_DEMAND DESC;
+-- insight:warehouses storing high-demand, low-stock products should NOT be closed.
+
+-- determining the final warehouse to close
+-- after all analysis, we check which warehouse still holds too much unused stock.
+-- SELECT 
+--     WAREHOUSECODE, 
+--     SUM(QUANTITYINSTOCK) AS REMAINING_STOCK
+-- FROM PRODUCTS
+-- GROUP BY WAREHOUSECODE
+-- ORDER BY REMAINING_STOCK ASC;
+-- insight:warehouse b with high remaining stock and low sales is the best candidate for closure.
+
+-- total number of orders per warehouse
+-- to check how many orders each warehouse processes.
+-- SELECT 
+--     P.WAREHOUSECODE, 
+--     COUNT(DISTINCT O.ORDERNUMBER) AS TOTAL_ORDERS
+-- FROM PRODUCTS P
+-- JOIN ORDERDETAILS OD ON P.PRODUCTCODE = OD.PRODUCTCODE
+-- JOIN ORDERS O ON OD.ORDERNUMBER = O.ORDERNUMBER
+-- GROUP BY P.WAREHOUSECODE
+-- ORDER BY TOTAL_ORDERS ASC;
+-- insight: warehouse A with low order volume may be inefficient or underutilized.
+
+-- delayed shipments per warehouse
+-- to check which warehouses have the most late shipments.
+-- SELECT 
+--     P.WAREHOUSECODE, 
+--     COUNT(O.ORDERNUMBER) AS DELAYED_ORDERS
+-- FROM PRODUCTS P
+-- JOIN ORDERDETAILS OD ON P.PRODUCTCODE = OD.PRODUCTCODE
+-- JOIN ORDERS O ON OD.ORDERNUMBER = O.ORDERNUMBER
+-- WHERE O.STATUS = 'Shipped' AND O.SHIPPEDDATE > O.ORDERDATE + INTERVAL 1 DAY
+-- GROUP BY P.WAREHOUSECODE
+-- ORDER BY DELAYED_ORDERS DESC;
+-- insight: warehouse B with high delay counts could be causing logistical inefficiencies.
+
+-- Final Warehouse Analysis: 
+-- Based on the analysis, the warehouse that appears to be underperforming is warehouse B. It holds high remaining stock with low sales, 
+-- making it a less efficient option and a potential candidate for closure. 
+-- while warehouse A may not generate as much revenue, it exhibits high stock turnover, indicating better efficiency in moving products. 
+-- therefore, warehouse B, with its slow-moving stock, should be considered for closure, while efforts should be made to redistribute its 
+-- stock to warehouses with higher turnover rates, like warehouse A.
+
